@@ -8,9 +8,15 @@ import redis
 import requests
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
-redis_host = ""
-redis_password = ""
-BUILD_TOKEN = ""
+
+# Retrieve server parameters from environment variables
+redis_host = os.getenv('REDIS_HOST', 'localhost')
+redis_port = int(os.getenv('REDIS_PORT', 6379))
+redis_password = os.getenv('REDIS_PASSWORD')
+
+# Retrieve token from environment variable
+BUILD_TOKEN = os.getenv('BUILD_TOKEN')
+
 FILE_STORE_UPL = "http://file-store.rosalinux.ru/api/v1/upload"
 FILE_STORE_API = "http://file-store.rosalinux.ru/api/v1/file_stores"
 TWO_IN_THE_TWENTIETH = 2**20
@@ -60,7 +66,10 @@ class LiveLogger:
                 if self.buffer:
                     logs = "\n".join(self.buffer)
                     try:
-                        r = redis.Redis(host=redis_host, password=redis_password)
+                        if redis_password:
+                            r = redis.Redis(host=redis_host, password=redis_password)
+                        else:
+                            r = redis.Redis(host=redis_host, port=redis_port)
                         r.setex(self.key_name, self.LOG_DUMP_INTERVAL + 5, logs)
                     except:
                         pass
@@ -91,7 +100,10 @@ class LiveInspector:
     def status(self):
         q = 'abfworker::iso-worker-' + str(self.worker.build_id) + '::live-inspector'
         try:
-            r = redis.Redis(host=redis_host, password=redis_password)
+            if redis_password:
+                r = redis.Redis(host=redis_host, password=redis_password)
+            else:
+                r = redis.Redis(host=redis_host, port=redis_port)
             return r.get(q)
         except:
             return None
@@ -205,10 +217,17 @@ class IsoWorker:
             'id': self.build_id,
             'status': self.status
         }
-        print(worker_args)
         worker_args.update(args)
+        print(worker_args)
         try:
-            r = redis.Redis(host=redis_host, password=redis_password)
+            if redis_password:
+                r = redis.Redis(host=redis_host, password=redis_password)
+            else:
+                r = redis.Redis(host=redis_host, port=redis_port)
+                if r.ping():
+                    print("Connected to Redis server")
+                else:
+                    print("Failed to connect to Redis server")
             r.rpush('iso_worker_observer', worker_args)
         except:
             pass
@@ -253,14 +272,7 @@ class IsoWorker:
 import sys
 
 if __name__ == "__main__":
-    if "--redis" not in sys.argv or "--password" not in sys.argv or "--token" not in sys.argv:
-        print("Usage: python isobuilder.py --redis <redis_host> --password <redis_password> --token <BUILD_TOKEN>")
-        sys.exit(1)
-
-    redis_host = sys.argv[sys.argv.index("--redis") + 1]
-    redis_password = sys.argv[sys.argv.index("--password") + 1]
-    BUILD_TOKEN = sys.argv[sys.argv.index("--token") + 1]
-
+    # default options needed for testing
     options = {
         'id': 1,
         'params': 'ABF=1 rosaVersion=rosa2023.1 arch=x86_64 dnfDisableDocs=1 packagesList="basesystem-minimal"',
