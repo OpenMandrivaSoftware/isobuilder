@@ -11,6 +11,9 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 redis_host = ""
 redis_password = ""
 BUILD_TOKEN = ""
+FILE_STORE_UPL = "http://file-store.rosalinux.ru/api/v1/upload"
+FILE_STORE_API = "http://file-store.rosalinux.ru/api/v1/file_stores"
+TWO_IN_THE_TWENTIETH = 2**20
 
 class FileLogger:
     def __init__(self, file_path):
@@ -104,6 +107,8 @@ class IsoRunner:
         self.params = options['params']
         self.srcpath = options['srcpath']
         self.command = options['main_script']
+        self.exit_status = None
+        self.container_name = 'iso'
         arch = [x for x in self.params.split(' ') if x.startswith('ARCH=')][0][5:] if 'ARCH=' in self.params else 'default'
         arch = arch.replace('ARCH=', '')
 
@@ -132,7 +137,7 @@ class IsoRunner:
             self.prepare_script()
             exit_status = None
             final_command = [
-                "docker", "run", "--name", self.worker.container_name, "--rm", "--privileged=true",
+                "docker", "run", "--name", self.container_name, "--rm", "--privileged=true",
                 "--add-host", "abf-downloads.rosalinux.ru:192.168.76.41",
                 "--add-host", "file-store.rosalinux.ru:192.168.76.51",
                 "--device", "/dev/loop-control:/dev/loop-control",
@@ -142,6 +147,7 @@ class IsoRunner:
                 self.docker_container,
                 "/bin/bash", "-c", "cd /home/vagrant/iso_builder; chmod a+x " + self.command + "; " + self.params + " ./" + self.command
             ]
+            print(final_command)
             process = subprocess.Popen(final_command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
             for line in process.stdout:
                 line = line.decode().strip()
@@ -155,7 +161,7 @@ class IsoRunner:
                     self.worker.status = 1
                 else:
                     self.worker.status = 0
-            #subprocess.call(["sudo", "rm", "-rf", os.path.join(ROOT, 'iso_builder')])
+            subprocess.call(["sudo", "rm", "-rf", os.path.join(ROOT, 'iso_builder')])
 
     def prepare_script(self):
         file_name = self.srcpath.split('archive/')[1]
@@ -181,20 +187,23 @@ class IsoWorker:
         self.live_inspector = LiveInspector(self, options['time_living'], "iso" + str(self.build_id))
 
     def perform(self):
-        self.runner.run_script()
+        #self.runner.run_script()
         self.send_results()
 
     def send_results(self):
+        print("send results")
         self.update_build_status_on_abf({
             'results': self.upload_results_to_file_store(),
             'exit_status': self.runner.exit_status
         })
 
     def update_build_status_on_abf(self, args={}):
+        print('update build status on redis')
         worker_args = {
             'id': self.build_id,
             'status': self.status
         }
+        print(worker_args)
         worker_args.update(args)
         try:
             r = redis.Redis(host=redis_host, password=redis_password)
@@ -204,6 +213,7 @@ class IsoWorker:
 
     def upload_file_to_file_store(self, file_name):
         path_to_file = file_name
+        print(BUILD_TOKEN)
         if os.path.isfile(path_to_file):
             sha1 = hashlib.sha1()
             with open(path_to_file, 'rb') as f:
@@ -217,15 +227,15 @@ class IsoWorker:
 
             while True:
                 try:
-                    response = requests.get(APP_CONFIG['file_store']['url'] + ".json?hash=" + sha1)
+                    response = requests.get(FILE_STORE_API + ".json?hash=" + sha1)
                     if sha1 in response.text:
                         break
-                    command = "curl --user " + BUILD_TOKEN + ": -POST -F \"file_store[file]=@" + path_to_file + "\" " + APP_CONFIG['file_store']['create_url'] + " --connect-timeout 5 --retry 5"
+                    command = "curl --user " + BUILD_TOKEN + ": -POST -F \"file_store[file]=@" + path_to_file + "\" " + FILE_STORE_UPL + " --connect-timeout 5 --retry 5"
                     subprocess.call(command, shell=True)
                 except:
                     pass
 
-            #subprocess.call(["sudo", "rm", "-rf", path_to_file])
+            subprocess.call(["sudo", "rm", "-rf", path_to_file])
             return {'sha1': sha1, 'file_name': os.path.basename(file_name), 'size': file_size}
 
     def upload_results_to_file_store(self):
@@ -234,6 +244,7 @@ class IsoWorker:
         if os.path.exists(results_folder) and os.path.isdir(results_folder):
             for root, dirs, files in os.walk(results_folder):
                 for file in files:
+                    print(file)
                     filename = os.path.join(root, file)
                     uploaded.append(self.upload_file_to_file_store(filename))
         return uploaded
@@ -251,7 +262,7 @@ if __name__ == "__main__":
 
     options = {
         'id': 1,
-        'params': 'ARCH=x86_64',
+        'params': 'ARCH=x86_64 PLATFORM=rosa2023.1 ABF=1 DE=SERVER',
         'srcpath': 'https://abf.io/soft/rosa-build-iso/archive/rosa-build-iso-master.tar.gz',
         'main_script': 'build-iso-abf.sh',
         'platform': {
