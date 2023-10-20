@@ -165,6 +165,7 @@ class IsoRunner:
 
     def prepare_script(self):
         file_name = self.srcpath.split('archive/')[1]
+        print(file_name)
         folder_name = self.srcpath.split('/')[-2]
         branch = file_name.replace('.tar.gz', '')
 
@@ -174,6 +175,7 @@ class IsoRunner:
                   "sudo rm -rf iso_builder; " \
                   "mv " + branch + " iso_builder; " \
                   "rm -rf " + file_name
+        print(command)
         subprocess.call(command, shell=True)
 
 class IsoWorker:
@@ -187,7 +189,7 @@ class IsoWorker:
         self.live_inspector = LiveInspector(self, options['time_living'], "iso" + str(self.build_id))
 
     def perform(self):
-        #self.runner.run_script()
+        self.runner.run_script()
         self.send_results()
 
     def send_results(self):
@@ -262,9 +264,9 @@ if __name__ == "__main__":
 
     options = {
         'id': 1,
-        'params': 'ARCH=x86_64 PLATFORM=rosa2023.1 ABF=1 DE=SERVER',
-        'srcpath': 'https://abf.io/soft/rosa-build-iso/archive/rosa-build-iso-master.tar.gz',
-        'main_script': 'build-iso-abf.sh',
+        'params': 'ABF=1 rosaVersion=rosa2023.1 arch=x86_64 dnfDisableDocs=1 packagesList="basesystem-minimal"',
+        'srcpath': 'https://abf.io/soft/rootfs-rosa/archive/rootfs-rosa-master.tar.gz',
+        'main_script': 'ABF.sh',
         'platform': {
             'type': 'dnf',
             'name': 'rosa2021.1'
