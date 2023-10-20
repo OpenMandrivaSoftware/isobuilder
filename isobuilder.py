@@ -161,7 +161,6 @@ class IsoRunner:
                     self.worker.status = 1
                 else:
                     self.worker.status = 0
-            subprocess.call(["sudo", "rm", "-rf", os.path.join(ROOT, 'iso_builder')])
 
     def prepare_script(self):
         file_name = self.srcpath.split('archive/')[1]
@@ -198,6 +197,7 @@ class IsoWorker:
             'results': self.upload_results_to_file_store(),
             'exit_status': self.runner.exit_status
         })
+        subprocess.call(["sudo", "rm", "-rf", os.path.join(ROOT, 'iso_builder')])
 
     def update_build_status_on_abf(self, args={}):
         print('update build status on redis')
@@ -215,7 +215,6 @@ class IsoWorker:
 
     def upload_file_to_file_store(self, file_name):
         path_to_file = file_name
-        print(BUILD_TOKEN)
         if os.path.isfile(path_to_file):
             sha1 = hashlib.sha1()
             with open(path_to_file, 'rb') as f:
