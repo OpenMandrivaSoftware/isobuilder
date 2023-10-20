@@ -6,6 +6,7 @@ import subprocess
 import hashlib
 import redis
 import requests
+import json
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 
@@ -272,19 +273,48 @@ class IsoWorker:
 import sys
 
 if __name__ == "__main__":
-    # default options needed for testing
-    options = {
-        'id': 1,
-        'params': 'ABF=1 rosaVersion=rosa2023.1 arch=x86_64 dnfDisableDocs=1 packagesList="basesystem-minimal"',
-        'srcpath': 'https://abf.io/soft/rootfs-rosa/archive/rootfs-rosa-master.tar.gz',
-        'main_script': 'ABF.sh',
-        'platform': {
-            'type': 'dnf',
-            'name': 'rosa2021.1'
-        },
-        'time_living': 3600
-    }
+    if redis_password:
+        r = redis.Redis(host=redis_host, password=redis_password)
+    else:
+        r = redis.Redis(host=redis_host, port=redis_port)
 
-    worker = IsoWorker(options)
-    worker.perform()
+    # Specify the queue key
+    queue_key = 'resque:queue:iso_worker'
+
+    while True:
+        # Check if the connection is successful
+        try:
+            r.ping()
+            print("Connected to Redis")
+        except redis.exceptions.ConnectionError:
+            print("Failed to connect to Redis")
+            time.sleep(1)
+            continue
+
+        # Get all items from the queue
+        items = r.lrange(queue_key, 0, -1)
+
+        # Decode and print each item
+        for item in items:
+            job_data = json.loads(item.decode('utf-8'))
+            options = job_data['args'][0]
+
+            # Update the existing options dictionary
+            options.update({
+                'id': options.get('id', 1),
+                'params': options.get('params', ''),
+                'srcpath': options.get('srcpath', ''),
+                'main_script': options.get('main_script', ''),
+                'platform': options.get('platform', {}),
+                'time_living': options.get('time_living', 3600)
+            })
+
+            # Print the updated options
+            print(options['id'])
+
+        worker = IsoWorker(options)
+        worker.perform()
+        # Delay for 1 second
+        time.sleep(1)
+
 
